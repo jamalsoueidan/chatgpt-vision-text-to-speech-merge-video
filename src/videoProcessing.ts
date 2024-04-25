@@ -5,12 +5,31 @@ import path from "path";
 import pixelmatch from "pixelmatch";
 import { PNG, PNGWithMetadata } from "pngjs";
 
+function renameFiles(outputDir: string, fps: number) {
+  const files = fs.readdirSync(outputDir).sort();
+  files.forEach((file, index) => {
+    const frameNumber = index + 1;
+    const second = Math.floor((frameNumber - 1) / fps);
+    const frameInSecond = ((frameNumber - 1) % fps) + 1;
+
+    const newFilename = `frame-${second
+      .toString()
+      .padStart(2, "0")}-${frameInSecond.toString().padStart(2, "0")}.png`;
+
+    fs.renameSync(
+      path.join(outputDir, file),
+      path.join(outputDir, newFilename)
+    );
+  });
+}
+
 let previousFrame: PNGWithMetadata | undefined = undefined;
+let previousPath = "";
 
 function compareFrames(currentFramePath: string) {
   return new Promise((resolve, reject) => {
     if (!previousFrame) {
-      // If no previous frame, save the first frame and exit
+      previousPath = currentFramePath;
       previousFrame = PNG.sync.read(fs.readFileSync(currentFramePath));
       resolve(true);
       return;
@@ -27,18 +46,18 @@ function compareFrames(currentFramePath: string) {
       width,
       height,
       {
-        threshold: 0.01,
+        threshold: 0.02,
         includeAA: true,
         alpha: 0,
         diffMask: true,
       }
     );
     const percentDifference = (numDiffPixels / (width * height)) * 100;
-    console.log(percentDifference);
-    if (percentDifference < 1) {
+    if (percentDifference < 0.4) {
       fs.unlinkSync(currentFramePath);
       resolve(false);
     } else {
+      previousPath = currentFramePath;
       previousFrame = currentFrame;
       resolve(true);
     }
@@ -46,22 +65,23 @@ function compareFrames(currentFramePath: string) {
 }
 
 export async function videoToFrames(videoPath: string): Promise<void> {
+  const framesDir = path.join(__dirname, "frames");
+  if (fs.existsSync(framesDir)) {
+    fs.rmSync(framesDir, { recursive: true, force: true });
+  }
+
+  fs.mkdirSync(framesDir, { recursive: true });
+
+  const frameRate = 3;
+
   return new Promise<void>((resolve, reject) => {
-    const framesDir = path.join(__dirname, "frames");
-    if (fs.existsSync(framesDir)) {
-      fs.rmSync(framesDir, { recursive: true, force: true });
-      console.log("Existing frames directory removed.");
-    }
-
-    fs.mkdirSync(framesDir, { recursive: true });
-
     ffmpeg(videoPath)
       .setFfmpegPath(ffmpegStatic || "")
-      .output(path.join(framesDir, "frame-%03d.png"))
-      .outputOptions(["-vf fps=fps=1,scale=iw*0.5:ih*0.5"])
+      .output(path.join(framesDir, "frame-%04d.png"))
+      .outputOptions([`-vf fps=fps=${frameRate},scale=iw*0.5:ih*0.5`])
       .on("end", async () => {
-        console.log("Frames extracted");
-        const files = fs.readdirSync(framesDir);
+        renameFiles(framesDir, frameRate);
+        let files = fs.readdirSync(framesDir).sort();
         await Promise.all(
           files.map(async (file, index) => {
             if (index !== files.length - 1) {

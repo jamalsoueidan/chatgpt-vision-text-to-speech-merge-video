@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import path from "path";
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API,
+  apiKey: "sk-proj-SQCuLj9szacTTcwzBPYnT3BlbkFJo5B1FXfnPvyTzBqimJSv",
 });
 
 function encodeImageToBase64(filePath: string) {
@@ -11,9 +11,34 @@ function encodeImageToBase64(filePath: string) {
   return fileBuffer.toString("base64");
 }
 
-export async function explainFrames(videoDuration: number) {
+function numericSort(a: string, b: string) {
+  const numPattern = /(\d+)-(\d+)/; // Matches two groups of digits separated by '-'
+
+  // Extract parts
+  const partsA = a.match(numPattern);
+  const partsB = b.match(numPattern);
+
+  if (!partsA || !partsB) {
+    throw new Error("Error happened");
+  }
+  const secA = parseInt(partsA[1], 10);
+  const secB = parseInt(partsB[1], 10);
+  if (secA !== secB) {
+    return secA - secB;
+  }
+
+  const frameA = parseInt(partsA[2], 10);
+  const frameB = parseInt(partsB[2], 10);
+  return frameA - frameB;
+}
+
+export async function explainFrames(
+  videoDuration: number,
+  additionalInput: string
+) {
   const directoryPath = path.join(__dirname, "frames");
-  const files = fs.readdirSync(directoryPath);
+  const files = fs.readdirSync(directoryPath).sort(numericSort);
+  const webpFiles = files.filter((file) => file.endsWith(".webp"));
   const images: Array<{
     type: string;
     image_url: {
@@ -22,24 +47,23 @@ export async function explainFrames(videoDuration: number) {
   }> = [];
 
   const keyframes = [];
-  for (const file of files) {
-    if (file.endsWith(".png")) {
+  for (const file of webpFiles) {
+    if (file.endsWith(".webp")) {
       const filePath = path.join(directoryPath, file);
-      const match = file.match(/frame-(\d{3})\.webp/);
-
-      const indexOfFile = files.findIndex((f) => f === file) + 1;
+      const match = file.match(/(\d+)-(\d+)/);
+      const indexOfFile = webpFiles.findIndex((f) => f === file) + 1;
       const numberOfSeconds = match ? parseInt(match[1], 10) : null;
+      let text;
       if (indexOfFile === 1) {
-        keyframes.push(`first image is the starting point`);
+        text = `First Image is the starting point, `;
       } else if (indexOfFile !== files.length) {
-        keyframes.push(
-          `image number ${indexOfFile} ends by ${numberOfSeconds} seconds in the video, write down the text that needs to be said within this period of time.`
-        );
+        text = `image number ${indexOfFile} ends by ${numberOfSeconds} seconds in the video,`;
       } else {
-        keyframes.push(
-          `last image ends the video at ${numberOfSeconds} seconds`
-        );
+        text = `last image, ${indexOfFile}, ${numberOfSeconds}.`;
       }
+
+      keyframes.push(text);
+      console.log(filePath, text);
       const base64Image = encodeImageToBase64(filePath);
       images.push({
         type: "image_url",
@@ -48,11 +72,10 @@ export async function explainFrames(videoDuration: number) {
     }
   }
 
-  const wordCount = videoDuration * 3;
-  const text = `These are frames of a quick product demo walkthrough creating services (ydelser). create a short voiceover script that outline the key actions to take, that can be used along this product demo. This video is ONLY ${videoDuration} seconds long, so make sure the text (words) can be used over the video in ${videoDuration} seconds of the video. Here is overview of the images. ${keyframes.join(
-    ","
-  )}, Please send me answer in danish, and only the text that needs to be said, i will use your text to automatically sync text2audio`;
+  const estimateWordCount = videoDuration * 2;
+  const text = `These are frames of a quick product demo walkthrough. Create a short voiceover script that outline the key actions to take, that can be used along this product demo. This video is ONLY ${videoDuration} seconds long, so make sure the voice over MUST be able to be explained in less than ${estimateWordCount} words. ${additionalInput}. Requirement: Danish language.`;
 
+  console.log(text);
   const response = await openai.chat.completions.create({
     model: "gpt-4-turbo",
     messages: [

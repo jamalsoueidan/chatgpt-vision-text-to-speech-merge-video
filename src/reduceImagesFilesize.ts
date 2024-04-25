@@ -20,12 +20,23 @@ export async function reduceImagesFilesize(
     );
 
     return sharp(inputPath)
-      .webp({ quality: 80 })
-      .toFile(outputPath)
-      .catch((err) => {
-        console.error("Error processing file:", file, err);
+      .metadata()
+      .then((metadata) => {
+        const width = metadata.width ? Math.round(metadata.width * 0.65) : 200;
+        const height = metadata.height
+          ? Math.round(metadata.height * 0.65)
+          : 200;
+        return sharp(inputPath)
+          .resize({ width, height })
+          .webp({ quality: 80 })
+          .toFile(outputPath);
       });
   });
 
-  await Promise.all(promises);
+  try {
+    await Promise.all(promises);
+    console.log("All images processed successfully.");
+  } catch (err) {
+    console.error("An error occurred while processing images:", err);
+  }
 }
