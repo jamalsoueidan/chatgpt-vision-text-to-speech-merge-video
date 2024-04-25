@@ -3,7 +3,7 @@ import OpenAI from "openai";
 import path from "path";
 
 const openai = new OpenAI({
-  apiKey: "sk-proj-SQCuLj9szacTTcwzBPYnT3BlbkFJo5B1FXfnPvyTzBqimJSv",
+  apiKey: "",
 });
 
 function encodeImageToBase64(filePath: string) {
